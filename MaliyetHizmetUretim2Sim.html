@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Hizmet Üretim Maliyet Simülatörü (Kahve Dükkanı)</title>
+<style>
+  :root{
+    --bg:#f7f7f9; --card:#fff; --text:#111; --muted:#6b7280; --line:#e5e7eb;
+    --pos:#065f46; --neg:#7f1d1d; --accent:#2563eb; --pill:#eef2ff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial}
+  .container{max-width:1200px;margin:28px auto;padding:0 16px}
+  h1{margin:0 0 12px;font-size:26px}
+  .muted{color:var(--muted);font-size:13px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media (max-width: 980px){ .grid{grid-template-columns:1fr} }
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}
+  .row{display:grid;grid-template-columns:230px minmax(160px,1fr) 130px 130px;gap:8px;align-items:center;margin:6px 0}
+  .row input{ min-width: 0; }
+  .row label{font-size:14px}
+  input[type="text"]{width:100%;padding:8px 9px;border:1px solid var(--line);border-radius:10px;background:#fff}
+  input[disabled]{background:#f3f4f6;color:#6b7280}
+  .unit{font-size:12px;color:var(--muted)}
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 16px}
+  button{border:1px solid var(--line);background:#111827;color:#fff;padding:8px 12px;border-radius:10px;cursor:pointer}
+  button.secondary{background:#fff;color:#111;border-color:#d1d5db}
+  button.accent{background:var(--accent)}
+  .pill{display:inline-block;background:var(--pill);padding:2px 8px;border-radius:999px;font-size:12px}
+  table{width:100%;border-collapse:collapse;margin:8px 0}
+  th,td{border-bottom:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+  th.right,td.right{text-align:right}
+  .strong{font-weight:700}
+  .pos{color:var(--pos);font-weight:700}
+  .neg{color:var(--neg);font-weight:700}
+  .explain{color:var(--muted);font-size:12px}
+  .section h3{margin:6px 0 6px;font-size:18px}
+  code.formula{background:#f8fafc;border:1px solid var(--line);border-radius:8px;padding:2px 6px}
+
+/* Sadece RAPORLAR kartı (grid içindeki 2. kart) */
+.grid > .card:nth-child(2){
+  font-size: 13px;      /* gövde yazıları küçült */
+  line-height: 1.35;    /* satır aralığını daralt */
+}
+
+/* Rapor başlıkları daha kompakt */
+.grid > .card:nth-child(2) .section h3{
+  font-size: 16px;
+  margin: 4px 0 6px;
+}
+
+/* Tablo hücreleri: daha dar padding ve daha kompakt satır yüksekliği */
+.grid > .card:nth-child(2) table th,
+.grid > .card:nth-child(2) table td{
+  padding: 6px 8px;
+  line-height: 1.25;
+}
+
+/* Açıklamalar zaten küçük; biraz daha küçültüp yer kazanalım */
+.grid > .card:nth-child(2) .explain{
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+/* Bölümler arası boşluğu azalt */
+.grid > .card:nth-child(2) .section{
+  margin-bottom: 8px;
+}
+
+/* ayırıcı çizgi */
+.sep{ border:0; border-top:1px solid var(--line); margin:12px 0 }
+
+/* Simülasyon kontrolleri */
+#simPanel select{
+  padding:8px 10px; border:1px solid var(--line); border-radius:10px; background:#fff;
+}
+
+/* Canvas, sol kartın genişliğini tamamen kullansın */
+#histCanvas{ width:100%; display:block }
+</style>
+</head>
+<body>
+  <div class="container">
+    <h1>Hizmet Üretim Maliyet Simülatörü <span class="pill">Kahve Dükkanı</span></h1>
+    <div class="muted">Sayı biçimi: bindelik <b>.</b>, ondalık <b>,</b>. Büyük girişler bine, küçük girişler tam sayıya yuvarlanır.</div>
+
+    <div class="toolbar">
+      <button id="editBtn" class="secondary">Değiştir</button>
+      <button id="applyBtn" class="accent">Uygula</button>
+      <button id="randBtn">Yenile (Rastgele)</button>
+    </div>
+
+    <div class="grid">
+      <!-- Girdi Paneli -->
+      <div class="card">
+        <h3>Girdiler (Değer • Min • Max)</h3>
+        <div id="inputs"></div>
+        <div class="muted" style="margin-top:8px">
+          İpucu: <b>Değiştir</b> ile min–maks ve değer alanlarını aktif edin. <b>Uygula</b> ile kendi girdilerinizle hesaplayın.
+          <b>Yenile</b> yalnızca aralıklara göre rastgele değer üretir.
+        </div>
+        <hr class="sep" />
+        <!-- Simülasyon paneli ARTIK girdiler kartının içinde -->
+        <div id="simPanel">
+          <h3>Monte Carlo Simülasyonu</h3>
+          <div class="toolbar" style="margin-top:6px">
+            <select id="simSelect">
+              <option value="10">10 defa dene</option>
+              <option value="100">100 defa dene</option>
+              <option value="1000">1000 defa dene</option>
+              <option value="10000">10000 defa dene</option>
+            </select>
+            <button id="simRun" class="accent">Çalıştır</button>
+            <button id="simClear" class="secondary">Temizle</button>
+          </div>
+          <!-- Grafik alanı: sol kartın tamamını kullanır -->
+          <div class="card" style="padding:10px;margin-top:10px">
+            <canvas id="histCanvas" height="220"></canvas>
+            <div id="simStats" class="muted" style="margin-top:6px"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Çıktılar -->
+      <div class="card">
+        <div id="outputs"></div>
+      </div>
+    </div>
+  </div>
+
+<script>
+/* ========= Yardımcılar: TR sayısal biçim & parse ========= */
+const nf0 = new Intl.NumberFormat('tr-TR', { maximumFractionDigits: 0, minimumFractionDigits: 0 });
+const nf2 = new Intl.NumberFormat('tr-TR', { maximumFractionDigits: 2, minimumFractionDigits: 2 });
+
+function fmt(n, d=0){
+  if (!isFinite(n)) return '—';
+  return d===0 ? nf0.format(Math.round(n)) : nf2.format(n);
+}
+function fmtMaybe2(n){ // b gibi “gerekirse ondalık”
+  const v = Math.round(n*100)/100;
+  return (Math.abs(v - Math.round(v)) < 1e-9) ? fmt(v,0) : fmt(v,2);
+}
+// metin -> sayı (TR): “1.234.567,89” -> 1234567.89
+function parseTR(s){
+  if (typeof s === 'number') return s;
+  if (!s) return NaN;
+  s = (''+s).trim().replace(/\./g,'').replace(',','.');
+  const v = Number(s);
+  return isFinite(v) ? v : NaN;
+}
+// yuvarlama: >=1000 ise bine, <1000 ise tam sayıya
+function roundBigSmall(v){
+  const abs = Math.abs(v);
+  if (abs >= 1000) return Math.round(v/1000)*1000;
+  return Math.round(v);
+}
+function clamp(v, lo, hi){ return Math.min(Math.max(v, lo), hi); }
+// rastgele aralık
+function randIn(lo, hi){ return lo + Math.random()*(hi-lo); }
+
+/* ========= Model ========= */
+const state = {
+  editMode: false,
+  vars: [
+    // Yatırım & Finansman
+    {id:'investmentTotal', label:'Yatırım Tutarı', unit:'TL', kind:'thousand', min:1000000, max:1500000, value:1200000},
+    {id:'equityPct', label:'Öz Sermaye Oranı', unit:'oran', kind:'percent', min:0.40, max:0.60, value:0.50},
+    {id:'monthlyInterestRate', label:'Aylık Faiz Oranı', unit:'oran', kind:'percent', min:0.035, max:0.045, value:0.040},
+
+    // Talep & Fiyat
+    {id:'days', label:'Aylık Çalışma Günü', unit:'gün', kind:'int', min:22, max:28, value:25},
+    {id:'unitsPerDay', label:'Günlük Satış Miktarı', unit:'adet/gün', kind:'int', min:80, max:120, value:100},
+    {id:'unitPrice', label:'Birim Satış Fiyatı', unit:'TL/ürün', kind:'int', min:100, max:140, value:120},
+
+    // Hammadde & Oranlar
+    {id:'coffeePricePerKg', label:'Hammadde (Kahve) Fiyatı', unit:'TL/kg', kind:'int', min:700, max:900, value:800},
+    {id:'gramsPerUnit', label:'Hammadde (Kahve) Kullanımı', unit:'gram/ürün', kind:'int', min:18, max:22, value:20},
+    {id:'materialsPctOfCoffee', label:'Diğer Malzeme Oranı', unit:'(Hammadde giderine bağlı)', kind:'percent', min:0.07, max:0.13, value:0.10},
+    {id:'energyPctOfCoffee', label:'Enerji Oranı', unit:'(Hammadde giderine bağlı)', kind:'percent', min:0.12, max:0.18, value:0.15},
+
+    // Sabit Üretim ve Faaliyet
+    {id:'rentMonthly', label:'Kira', unit:'TL/ay', kind:'thousand', min:27000, max:33000, value:30000},
+    {id:'staffCount', label:'Çalışan Sayısı', unit:'kişi', kind:'int', min:3, max:6, value:4},
+    {id:'staffCostPerPerson', label:'Kişi Başına Ücret', unit:'TL/ay', kind:'thousand', min:31000, max:50000, value:30553},
+    {id:'amortizationMonthly', label:'Amortisman', unit:'TL/ay', kind:'thousand', min:9000, max:11000, value:10000},
+    {id:'otherProdFixed', label:'Diğer Üretim Giderleri', unit:'TL/ay', kind:'thousand', min:4000, max:6000, value:5000},
+    {id:'marketingMonthly', label:'Pazarlama', unit:'TL/ay', kind:'thousand', min:10000, max:14000, value:12000},
+    {id:'adminMonthly', label:'Genel Yönetim', unit:'TL/ay', kind:'thousand', min:25000, max:31000, value:28000},
+
+    // Vergi
+    {id:'corpTaxPct', label:'Kurumlar Vergisi', unit:'oran', kind:'percent', min:0.20, max:0.30, value:0.25},
+  ]
+};
+
+/* ========= Input Renderer ========= */
+function renderInputs(){
+  const box = document.getElementById('inputs');
+  box.innerHTML = '';
+  state.vars.forEach(v=>{
+    const row = document.createElement('div');
+    row.className = 'row';
+    const disabled = state.editMode ? '' : 'disabled';
+    const valStr = formatValueForInput(v, v.value);
+    const minStr = formatValueForInput(v, v.min);
+    const maxStr = formatValueForInput(v, v.max);
+
+    row.innerHTML = `
+      <label for="val_${v.id}">
+        ${v.label} <div class="unit">${v.unit}</div>
+      </label>
+      <input id="val_${v.id}" type="text" value="${valStr}" ${state.editMode?'':'disabled'} autocapitalize="off" autocomplete="off" inputmode="numeric" />
+      <input id="min_${v.id}" type="text" value="${minStr}" ${state.editMode?'':'disabled'} />
+      <input id="max_${v.id}" type="text" value="${maxStr}" ${state.editMode?'':'disabled'} />
+    `;
+    box.appendChild(row);
+  });
+}
+
+function formatValueForInput(v, x){
+  if (v.kind === 'percent') return fmt(x,2).replace(/\./g,'').replace(',',','); // 0,25 gibi
+  if (v.kind === 'int') return fmt(x,0);
+  if (v.kind === 'thousand') return fmt(x,0); // 31.000 gibi
+  return fmtMaybe2(x);
+}
+
+/* ========= Girdi -> State ========= */
+function applyFromInputs(applyRanges=true){
+  const errors = [];
+  state.vars.forEach(v=>{
+    // değer
+    const val = parseTR(document.getElementById(`val_${v.id}`).value);
+    // min/max
+    const min = parseTR(document.getElementById(`min_${v.id}`).value);
+    const max = parseTR(document.getElementById(`max_${v.id}`).value);
+
+    if (applyRanges){
+      if (!isFinite(min) || !isFinite(max) || min>max) {
+        errors.push(`${v.label} için geçersiz aralık`);
+      } else {
+        // yuvarlama kuralları aralıklara uygulanmaz; kullanıcı tercihidir
+        v.min = min; v.max = max;
+      }
+    }
+    // değer yuvarlama (büyük: 1000'lik, küçük: tam sayı; %: 2 ondalık)
+    let newVal = val;
+    if (!isFinite(newVal)) errors.push(`${v.label} değeri boş/uygunsuz`);
+    else {
+      if (v.kind === 'percent') newVal = Math.round(newVal*100)/100; // 0,25 gibi
+      else if (v.kind === 'int') newVal = roundBigSmall(newVal);     // int
+      else if (v.kind === 'thousand') newVal = roundBigSmall(newVal); // 1000'lik
+      v.value = clamp(newVal, v.min, v.max);
+    }
+  });
+  if (errors.length){
+    alert(errors.join('\n'));
+    return false;
+  }
+  // equity+debt tutarlılığı
+  const eq = getVal('equityPct');
+  if (eq<0 || eq>1){ alert('Öz sermaye oranı [0..1] olmalı'); return false; }
+  return true;
+}
+
+/* ========= Rastgele atama ========= */
+function randomizeWithinRanges(){
+  state.vars.forEach(v=>{
+    let r = randIn(v.min, v.max);
+    if (v.kind === 'percent') r = Math.round(r*100)/100;
+    else if (v.kind === 'int' || v.kind === 'thousand') r = roundBigSmall(r);
+    v.value = clamp(r, v.min, v.max);
+  });
+}
+
+/* ========= Getter ========= */
+function getVal(id){ return state.vars.find(x=>x.id===id).value; }
+
+/* ========= Simülasyon ========= */
+let simData = { profits: [], mean: 0, std: 0, min: 0, max: 0 };
+
+function computeFrom(inputs){
+  // Girdiler
+  const {days, unitsPerDay, unitPrice, coffeePricePerKg, gramsPerUnit, materialsPctOfCoffee, energyPctOfCoffee,
+         rentMonthly, staffCount, staffCostPerPerson, amortizationMonthly, otherProdFixed, marketingMonthly, adminMonthly,
+         investmentTotal, equityPct, monthlyInterestRate, corpTaxPct} = inputs;
+
+  const debtPct = 1 - equityPct;
+  const mir = monthlyInterestRate;
+  const taxPct = corpTaxPct;
+
+  // Türev miktarlar
+  const Q = days * unitsPerDay;
+  const revenue = Q * unitPrice;
+  const coffeeKg = (Q * gramsPerUnit)/1000;
+
+  // Değişken maliyetler
+  const coffeeCost = coffeeKg * coffeePricePerKg;
+  const materials = coffeeCost * materialsPctOfCoffee;
+  const energy = coffeeCost * energyPctOfCoffee;
+  const variableTotal = coffeeCost + materials + energy;
+  const b = Q>0 ? (variableTotal / Q) : NaN;
+
+  // Sabit maliyetler
+  const staff = staffCount * staffCostPerPerson;
+  const finance = investmentTotal * debtPct * mir;
+  const fixedTotal = rentMonthly + staff + amortizationMonthly + otherProdFixed + marketingMonthly + adminMonthly + finance;
+
+  // Üretim maliyeti
+  const productionCosts = coffeeCost + materials + energy + staff + amortizationMonthly + rentMonthly + otherProdFixed;
+
+  // K/Z
+  const grossProfit = revenue - productionCosts;
+  const operatingProfit = grossProfit - (marketingMonthly + adminMonthly);
+  const profitBeforeTax = operatingProfit - finance;
+  const tax = profitBeforeTax>0 ? profitBeforeTax * taxPct : 0;
+  const netProfit = profitBeforeTax - tax;
+
+  return netProfit;
+}
+
+function sampleRandomVars(){
+  const inputs = {};
+  state.vars.forEach(v=>{
+    let r = randIn(v.min, v.max);
+    if (v.kind === 'percent') r = Math.round(r*100)/100;
+    else if (v.kind === 'int' || v.kind === 'thousand') r = roundBigSmall(r);
+    inputs[v.id] = r;
+  });
+  return inputs;
+}
+
+function drawHistogram(){
+  const canvas = document.getElementById('histCanvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = canvas.clientWidth;
+  const width = canvas.width;
+  const height = canvas.height;
+
+  // Clear canvas
+  ctx.clearRect(0, 0, width, height);
+
+  if (simData.profits.length === 0) return;
+
+  const profits = simData.profits;
+  const min = simData.min;
+  const max = simData.max;
+  const range = max - min;
+  const binCount = 20;
+  const binWidth = range / binCount;
+
+  // Create bins
+  const bins = new Array(binCount).fill(0);
+  profits.forEach(p => {
+    const binIndex = Math.min(Math.floor((p - min) / binWidth), binCount - 1);
+    bins[binIndex]++;
+  });
+
+  const maxBin = Math.max(...bins);
+
+  // Draw histogram bars
+  ctx.fillStyle = 'rgba(37, 99, 235, 0.7)';
+  ctx.strokeStyle = 'rgba(37, 99, 235, 1)';
+  ctx.lineWidth = 1;
+
+  for (let i = 0; i < binCount; i++) {
+    const x = (i / binCount) * width;
+    const barHeight = (bins[i] / maxBin) * (height - 40);
+    const y = height - 30 - barHeight;
+
+    ctx.fillRect(x, y, width / binCount - 2, barHeight);
+    ctx.strokeRect(x, y, width / binCount - 2, barHeight);
+  }
+
+  // Draw KDE curve (simple approximation)
+  ctx.strokeStyle = 'rgba(220, 38, 38, 1)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+
+  const kdePoints = 100;
+  for (let i = 0; i <= kdePoints; i++) {
+    const x = (i / kdePoints) * range + min;
+    let density = 0;
+    profits.forEach(p => {
+      const diff = (p - x) / (range / 10); // bandwidth
+      density += Math.exp(-0.5 * diff * diff) / Math.sqrt(2 * Math.PI);
+    });
+    density /= profits.length;
+
+    const canvasX = (i / kdePoints) * width;
+    const canvasY = height - 30 - (density / Math.max(...bins.map(b => b / maxBin))) * (height - 40);
+
+    if (i === 0) ctx.moveTo(canvasX, canvasY);
+    else ctx.lineTo(canvasX, canvasY);
+  }
+  ctx.stroke();
+
+  // Draw axes and labels
+  ctx.strokeStyle = '#000';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, height - 30);
+  ctx.lineTo(width, height - 30);
+  ctx.moveTo(0, height - 30);
+  ctx.lineTo(0, 10);
+  ctx.stroke();
+
+  // Labels
+  ctx.fillStyle = '#000';
+  ctx.font = '12px Arial';
+  ctx.fillText('Net Kâr (TL)', width / 2 - 30, height - 5);
+  ctx.save();
+  ctx.translate(15, height / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText('Frekans', 0, 0);
+  ctx.restore();
+
+  // Statistics
+  const statsDiv = document.getElementById('simStats');
+  statsDiv.innerHTML = `
+    <div><strong>İstatistikler:</strong></div>
+    <div>Ortalama: ${fmt(simData.mean)}</div>
+    <div>Standart Sapma: ${fmt(simData.std)}</div>
+    <div>Min: ${fmt(simData.min)}</div>
+    <div>Maks: ${fmt(simData.max)}</div>
+  `;
+}
+
+/* ========= Hesaplama ========= */
+function compute(){
+  // Girdiler
+  const days = getVal('days');
+  const unitsPerDay = getVal('unitsPerDay');
+  const unitPrice = getVal('unitPrice');
+
+  const coffeePricePerKg = getVal('coffeePricePerKg');
+  const gramsPerUnit = getVal('gramsPerUnit');
+  const materialsPct = getVal('materialsPctOfCoffee');
+  const energyPct = getVal('energyPctOfCoffee');
+
+  const rent = getVal('rentMonthly');
+  const staffCount = getVal('staffCount');
+  const staffCostPerPerson = getVal('staffCostPerPerson');
+  const amort = getVal('amortizationMonthly');
+  const otherProdFixed = getVal('otherProdFixed');
+  const marketing = getVal('marketingMonthly');
+  const admin = getVal('adminMonthly');
+
+  const investment = getVal('investmentTotal');
+  const equityPct = getVal('equityPct');
+  const debtPct = 1 - equityPct;
+  const mir = getVal('monthlyInterestRate');
+  const taxPct = getVal('corpTaxPct');
+
+  // Türev miktarlar
+  const Q = days * unitsPerDay;
+  const revenue = Q * unitPrice;
+  const coffeeKg = (Q * gramsPerUnit)/1000;
+
+  // Değişken maliyetler
+  const coffeeCost = coffeeKg * coffeePricePerKg;
+  const materials = coffeeCost * materialsPct;
+  const energy = coffeeCost * energyPct;
+  const variableTotal = coffeeCost + materials + energy;
+  const b = Q>0 ? (variableTotal / Q) : NaN;
+
+  // Sabit maliyetler
+  const staff = staffCount * staffCostPerPerson;
+  const finance = investment * debtPct * mir;
+  const fixedTotal = rent + staff + amort + otherProdFixed + marketing + admin + finance;
+
+  // Üretim maliyeti (dosyadaki “Hizmet Üretim Giderleri”)
+  const productionCosts = coffeeCost + materials + energy + staff + amort + rent + otherProdFixed;
+
+  // K/Z
+  const grossProfit = revenue - productionCosts;
+  const operatingProfit = grossProfit - (marketing + admin);
+  const profitBeforeTax = operatingProfit - finance;
+  const tax = profitBeforeTax>0 ? profitBeforeTax * taxPct : 0;
+  const netProfit = profitBeforeTax - tax;
+
+  // Toplam maliyet ve denklemi
+  const TM = variableTotal + (fixedTotal);
+  const S = fixedTotal;
+
+  // Başabaş
+  const denom = unitPrice - b;
+  const bepQ = denom>0 ? (S / denom) : NaN;
+  const bepDaily = isFinite(bepQ) ? (bepQ / days) : NaN;
+
+  return {
+    Q, revenue, coffeeKg,
+    coffeeCost, materials, energy, variableTotal, b,
+    staff, finance, fixedTotal, productionCosts,
+    grossProfit, operatingProfit, profitBeforeTax, tax, netProfit,
+    TM, S, denom, bepQ, bepDaily,
+    inputs: {days, unitsPerDay, unitPrice, gramsPerUnit, coffeePricePerKg, materialsPct, energyPct, marketing, admin, rent, staffCount, staffCostPerPerson, amort, otherProdFixed, investment, equityPct, debtPct, mir, taxPct}
+  };
+}
+
+/* ========= Çıktı Renderer ========= */
+function renderOutputs(){
+  const r = compute();
+  const o = document.getElementById('outputs');
+  const negOrPos = (n)=> n<0 ? 'neg' : 'pos';
+
+  o.innerHTML = `
+    <div class="section">
+      <h3>Hızlı Özet</h3>
+      <table>
+        <tr><th>Aylık Üretim/Satış (Q)</th><td class="right strong">${fmt(r.Q)}</td>
+            <td class="explain">= ${fmt(getVal('days'))} gün × ${fmt(getVal('unitsPerDay'))} adet/gün</td></tr>
+        <tr><th>Aylık Gelir</th><td class="right strong">${fmt(r.revenue)}</td>
+            <td class="explain">= Q × Fiyat = ${fmt(r.Q)} × ${fmt(getVal('unitPrice'))}</td></tr>
+        <tr><th>Kahve Kullanımı (kg)</th><td class="right strong">${fmt(r.coffeeKg,2)}</td>
+            <td class="explain">= Q × ${fmt(getVal('gramsPerUnit'))} g / 1000</td></tr>
+      </table>
+    </div>
+
+    <div class="section">
+      <h3>Üretim Giderleri (Hizmet Üretim Maliyeti)</h3>
+      <table>
+        <tr><td>Hamadde (Kahve) Gideri</td><td class="right">${fmt(r.coffeeCost)}</td>
+            <td class="explain">= ${fmt(r.coffeeKg,2)} kg × ${fmt(getVal('coffeePricePerKg'))} TL/kg</td></tr>
+        <tr><td>Diğer Malzemeler</td><td class="right">${fmt(r.materials)}</td>
+            <td class="explain">= Kahve Gideri × ${fmt(getVal('materialsPctOfCoffee'),2)}</td></tr>
+        <tr><td>Personel</td><td class="right">${fmt(r.staff)}</td>
+            <td class="explain">= ${fmt(getVal('staffCount'))} × ${fmt(getVal('staffCostPerPerson'))} TL/ay</td></tr>
+        <tr><td>Enerji</td><td class="right">${fmt(r.energy)}</td>
+            <td class="explain">= Kahve Gideri × ${fmt(getVal('energyPctOfCoffee'),2)}</td></tr>        
+        <tr><td>Amortisman</td><td class="right">${fmt(getVal('amortizationMonthly'))}</td>
+            <td class="explain">sabit</td></tr>
+        <tr><td>Kira</td><td class="right">${fmt(getVal('rentMonthly'))}</td>
+            <td class="explain">sabit</td></tr>
+        <tr><td>Diğer Üretim Giderleri</td><td class="right">${fmt(getVal('otherProdFixed'))}</td>
+            <td class="explain">sabit</td></tr>
+        <tr><th>Toplam Üretim Gideri</th><th class="right strong">${fmt(r.productionCosts)}</th><td></td></tr>
+      </table>
+    </div>
+
+    <div class="section">
+      <h3>Kâr / Zarar Tablosu (Aylık)</h3>
+      <table>
+        <tr><td>Hizmet Satışları</td><td class="right strong">${fmt(r.revenue)}</td>
+            <td class="explain">= Q × Fiyat</td></tr>
+        <tr><td>Satılan Hizmet Maliyeti</td><td class="right neg strong">-${fmt(r.productionCosts)}</td>
+            <td class="explain">Üretim Giderleri</td></tr>
+        <tr><th>Brüt Kâr</th><th class="right ${negOrPos(r.grossProfit)}">${fmt(r.grossProfit)}</th>
+            <td class="explain">= Satışlar − SHM</td></tr>
+        <tr><td>Pazarlama</td><td class="right neg">-${fmt(getVal('marketingMonthly'))}</td>
+            <td class="explain">faaliyet gideri</td></tr>
+        <tr><td>Genel Yönetim</td><td class="right neg">-${fmt(getVal('adminMonthly'))}</td>
+            <td class="explain">faaliyet gideri</td></tr>
+        <tr><th>Faaliyet Kâr/Zararı</th><th class="right ${negOrPos(r.operatingProfit)}">${fmt(r.operatingProfit)}</th>
+            <td class="explain">= Brüt Kâr − (Paz. + GY)</td></tr>
+        <tr><td>Finansman Giderleri</td><td class="right neg">-${fmt(r.finance)}</td>
+            <td class="explain">= Yatırım × (1−ÖS) × faiz</td></tr>
+        <tr><th>Dönem Kârı/Zararı (Vergi Öncesi)</th><th class="right ${negOrPos(r.profitBeforeTax)}">${fmt(r.profitBeforeTax)}</th>
+            <td class="explain">= Faaliyet − Finansman</td></tr>
+        <tr><td>Dönem Vergisi</td><td class="right neg">-${fmt(r.tax)}</td>
+            <td class="explain">${fmt(getVal('corpTaxPct'),2)} × pozitif VK</td></tr>
+        <tr><th>Dönem Net Kâr/Zarar</th><th class="right ${negOrPos(r.netProfit)}">${fmt(r.netProfit)}</th><td></td></tr>
+      </table>
+    </div>
+
+    <div class="section">
+      <h3>Sabit / Değişken Ayrımı ve Birim Maliyetler</h3>
+      <table>
+        <tr><td>Toplam Değişken Gider</td><td class="right">${fmt(r.variableTotal)}</td>
+            <td class="explain">Kahve + Malzeme + Enerji</td></tr>
+        <tr><td>Toplam Sabit Gider</td><td class="right">${fmt(r.fixedTotal)}</td>
+            <td class="explain">Personel + Amort. + Kira + Diğer + Paz. + GY + Finans</td></tr>
+        <tr><td>Birim Değişken (b)</td><td class="right strong">${fmtMaybe2(r.b)}</td>
+            <td class="explain">= Değişken / Q</td></tr>
+        <tr><td>Birim Sabit</td><td class="right strong">${fmtMaybe2(r.fixedTotal / r.Q)}</td>
+            <td class="explain">= Sabit / Q</td></tr>
+        <tr><th>Birim Toplam Maliyet</th><th class="right strong">${fmtMaybe2(r.TM / r.Q)}</th><td></td></tr>
+      </table>
+    </div>
+
+    <div class="section">
+      <h3>Maliyet Denklemi</h3>
+      <div class="muted">Toplam Maliyet <code class="formula">TM(Q) = S + b·Q</code></div>
+      <div>Burada S = <b>${fmt(r.S)}</b>, b = <b>${fmtMaybe2(r.b)}</b></div>
+      <div class="explain">S = Sabit Giderler; b = Birim Değişken Maliyet</div>
+    </div>
+
+    <div class="section">
+      <h3>Başabaş Analizi</h3>
+      <table>
+        <tr><td>Başabaş Miktarı (Aylık)</td>
+            <td class="right strong">${isFinite(r.bepQ)?fmt(r.bepQ):'—'}</td>
+            <td class="explain">= S / (Fiyat − b)</td></tr>
+        <tr><td>Günlük Başabaş</td>
+            <td class="right strong">${isFinite(r.bepDaily)?fmt(r.bepDaily):'—'}</td>
+            <td class="explain">= BBM / gün</td></tr>
+      </table>
+      ${ (isFinite(r.denom) && r.denom<=0) ? `<div class="neg">Uyarı: Fiyat ≤ birim değişken maliyet → başabaş tanımsız.</div>`:''}
+    </div>
+  `;
+}
+
+/* ========= Etkileşim ========= */
+function setEditMode(on){
+  state.editMode = on;
+  document.getElementById('editBtn').textContent = on ? 'Değiştir (Kapat)' : 'Değiştir';
+  renderInputs();
+  if(on){
+    // ilk değere odaklan
+    const first = document.querySelector('#inputs input[id^="val_"]');
+    if(first){ first.focus(); first.select(); }
+  }
+}
+document.getElementById('editBtn').addEventListener('click', ()=>{
+  if (state.editMode){
+    // kapatırken girdileri uygula ama rastgele çalıştırma
+    const ok = applyFromInputs(true);
+    if (!ok) return;
+    renderOutputs();
+    setEditMode(false);
+  }else{
+    setEditMode(true);
+  }
+});
+document.getElementById('applyBtn').addEventListener('click', ()=>{
+  const ok = applyFromInputs(true);
+  if (!ok) return;
+  renderOutputs();
+});
+document.getElementById('randBtn').addEventListener('click', ()=>{
+  // yalnızca rastgele
+  randomizeWithinRanges();
+  renderInputs();
+  renderOutputs();
+});
+document.getElementById('simRun').addEventListener('click', ()=>{
+  const count = parseInt(document.getElementById('simSelect').value) || 1000;
+  simData.profits = [];
+
+  for (let i = 0; i < count; i++) {
+    const inputs = sampleRandomVars();
+    const profit = computeFrom(inputs);
+    simData.profits.push(profit);
+  }
+
+  // Calculate statistics
+  simData.mean = simData.profits.reduce((a, b) => a + b, 0) / simData.profits.length;
+  simData.std = Math.sqrt(simData.profits.reduce((a, b) => a + (b - simData.mean) ** 2, 0) / simData.profits.length);
+  simData.min = Math.min(...simData.profits);
+  simData.max = Math.max(...simData.profits);
+
+  drawHistogram();
+});
+
+document.getElementById('simClear').addEventListener('click', ()=>{
+  simData = { profits: [], mean: 0, std: 0, min: 0, max: 0 };
+  drawHistogram();
+});
+
+/* ========= İlk yükleme ========= */
+(function init(){
+  // ilk açılışta aralıklara göre random + yuvarlama
+  randomizeWithinRanges();
+  renderInputs();
+  renderOutputs();
+  drawHistogram();
+
+  // pencere yeniden boyutlanınca grafiği tazele
+  window.addEventListener('resize', drawHistogram);
+})();
+</script>
+</body>
+</html>
